@@ -180,7 +180,7 @@ app.post('/api/capture', async (req, res) => {
 
       browser = await chromium.launch({
         headless: true,
-        channel: 'chrome',
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
       });
 
       const context = await browser.newContext(DEVICE_PRESET);
