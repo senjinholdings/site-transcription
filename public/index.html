@@ -207,7 +207,7 @@
             <h3>📸 キャプチャ画像</h3>
             <img id="preview" src="" alt="Preview" />
             <div class="button-group">
-              <a id="downloadLink" class="download-btn" href="#" download>画像をダウンロード</a>
+              <button id="downloadBtn" class="download-btn" onclick="downloadImage()">画像をダウンロード</button>
             </div>
           </div>
           <div class="result-section">
@@ -279,7 +279,6 @@
 
           if (status.status === 'completed') {
             document.getElementById('preview').src = `/api/preview/${jobId}`;
-            document.getElementById('downloadLink').href = `/api/download/${jobId}`;
             document.getElementById('ocrText').textContent = status.ocrText || '（テキストなし）';
 
             if (status.error) {
@@ -318,6 +317,30 @@
       }).catch(() => {
         alert('コピーに失敗しました');
       });
+    }
+
+    async function downloadImage() {
+      if (!currentJobId) {
+        alert('ダウンロードする画像がありません');
+        return;
+      }
+      try {
+        const response = await fetch(`/api/download/${currentJobId}`);
+        if (!response.ok) {
+          throw new Error('ダウンロードに失敗しました');
+        }
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `capture-${currentJobId}.png`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } catch (e) {
+        alert('画像のダウンロードに失敗しました');
+      }
     }
 
     document.getElementById('urlInput').addEventListener('keypress', (e) => {
