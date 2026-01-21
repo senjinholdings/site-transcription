@@ -586,7 +586,7 @@
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `capture-${currentJobId}.png`;
+        a.download = `capture-${currentJobId}.jpg`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);

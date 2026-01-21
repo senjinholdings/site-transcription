@@ -39,19 +39,30 @@ interface JobStatus {
 
 const captureStatus = new Map<string, JobStatus>();
 
-// Cloud Storageに画像をアップロード
-async function uploadToStorage(jobId: string, buffer: Buffer): Promise<void> {
+// Cloud Storageに画像をアップロード（JPEG圧縮）
+async function uploadToStorage(jobId: string, buffer: Buffer): Promise<Buffer> {
   const bucket = storage.bucket(BUCKET_NAME);
-  const file = bucket.file(`${jobId}.png`);
-  await file.save(buffer, { contentType: 'image/png' });
-  console.log(`[Storage] Uploaded ${jobId}.png`);
+
+  // PNGをJPEGに変換して圧縮（Cloud Runの32MB制限対策）
+  const compressedBuffer = await sharp(buffer)
+    .jpeg({ quality: 85 })
+    .toBuffer();
+
+  const file = bucket.file(`${jobId}.jpg`);
+  await file.save(compressedBuffer, { contentType: 'image/jpeg' });
+
+  const originalSize = (buffer.length / 1024 / 1024).toFixed(2);
+  const compressedSize = (compressedBuffer.length / 1024 / 1024).toFixed(2);
+  console.log(`[Storage] Uploaded ${jobId}.jpg (${originalSize}MB → ${compressedSize}MB)`);
+
+  return compressedBuffer;
 }
 
 // Cloud Storageから画像をダウンロード
 async function downloadFromStorage(jobId: string): Promise<Buffer | null> {
   try {
     const bucket = storage.bucket(BUCKET_NAME);
-    const file = bucket.file(`${jobId}.png`);
+    const file = bucket.file(`${jobId}.jpg`);
     const [exists] = await file.exists();
     if (!exists) return null;
     const [buffer] = await file.download();
@@ -343,8 +354,8 @@ app.get('/api/download/:jobId', async (req, res) => {
   if (!imageBuffer) {
     return res.status(404).json({ error: 'Image not found' });
   }
-  res.setHeader('Content-Type', 'image/png');
-  res.setHeader('Content-Disposition', `attachment; filename=capture-${req.params.jobId}.png`);
+  res.setHeader('Content-Type', 'image/jpeg');
+  res.setHeader('Content-Disposition', `attachment; filename=capture-${req.params.jobId}.jpg`);
   res.send(imageBuffer);
 });
 
