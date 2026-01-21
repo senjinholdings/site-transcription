@@ -1,11 +1,15 @@
 import 'dotenv/config';
 import express from 'express';
-import { chromium, devices } from 'playwright';
+import { chromium, devices } from 'playwright-extra';
 import type { Page } from 'playwright';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import sharp from 'sharp';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { performOcr } from './gemini-helper.js';
+
+// Stealthプラグインを追加（ボット検出回避）
+chromium.use(StealthPlugin());
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
