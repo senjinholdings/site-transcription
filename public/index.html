@@ -31,64 +31,17 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* Header */
-    .header {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 48px;
-      background: rgba(251,251,253,0.8);
-      backdrop-filter: saturate(180%) blur(20px);
-      -webkit-backdrop-filter: saturate(180%) blur(20px);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      z-index: 100;
-    }
-
-    .header-content {
-      width: 100%;
-      max-width: 980px;
-      padding: 0 22px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .header-logo {
-      font-size: 17px;
-      font-weight: 600;
-      color: var(--text-primary);
-      letter-spacing: -0.02em;
-    }
-
-    .header-link {
-      font-size: 12px;
-      color: var(--text-secondary);
-      text-decoration: none;
-      padding: 6px 12px;
-      border-radius: 980px;
-      transition: all 0.2s ease;
-    }
-
-    .header-link:hover {
-      background: var(--bg-secondary);
-      color: var(--text-primary);
-    }
-
     /* Main */
     .main {
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 120px 22px 60px;
+      padding: 60px 22px 60px;
     }
 
     .main.has-results {
-      padding-top: 80px;
+      padding-top: 40px;
     }
 
     /* Hero */
@@ -469,13 +422,6 @@
   </style>
 </head>
 <body>
-  <header class="header">
-    <div class="header-content">
-      <span class="header-logo">Site Transcription</span>
-      <a href="https://github.com/senjinholdings/site-transcription" class="header-link" target="_blank">GitHub</a>
-    </div>
-  </header>
-
   <main class="main" id="main">
     <div class="hero">
       <h1 class="hero-title">Site Transcription</h1>
