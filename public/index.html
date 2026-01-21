@@ -582,11 +582,18 @@
         if (!response.ok) {
           throw new Error('ダウンロードに失敗しました');
         }
+        // Content-Dispositionからファイル名を取得
+        const disposition = response.headers.get('Content-Disposition');
+        let filename = `capture-${currentJobId}.jpg`;
+        if (disposition) {
+          const match = disposition.match(/filename=([^;]+)/);
+          if (match) filename = match[1];
+        }
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `capture-${currentJobId}.jpg`;
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);

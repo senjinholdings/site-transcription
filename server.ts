@@ -58,15 +58,28 @@ async function uploadToStorage(jobId: string, buffer: Buffer): Promise<Buffer> {
   return compressedBuffer;
 }
 
-// Cloud Storageから画像をダウンロード
-async function downloadFromStorage(jobId: string): Promise<Buffer | null> {
+// Cloud Storageから画像をダウンロード（jpg優先、png fallback）
+async function downloadFromStorage(jobId: string): Promise<{ buffer: Buffer; format: 'jpg' | 'png' } | null> {
   try {
     const bucket = storage.bucket(BUCKET_NAME);
-    const file = bucket.file(`${jobId}.jpg`);
-    const [exists] = await file.exists();
-    if (!exists) return null;
-    const [buffer] = await file.download();
-    return buffer;
+
+    // まずjpgを試す
+    const jpgFile = bucket.file(`${jobId}.jpg`);
+    const [jpgExists] = await jpgFile.exists();
+    if (jpgExists) {
+      const [buffer] = await jpgFile.download();
+      return { buffer, format: 'jpg' };
+    }
+
+    // jpgがなければpngを試す（古いファイル用）
+    const pngFile = bucket.file(`${jobId}.png`);
+    const [pngExists] = await pngFile.exists();
+    if (pngExists) {
+      const [buffer] = await pngFile.download();
+      return { buffer, format: 'png' };
+    }
+
+    return null;
   } catch (error) {
     console.error(`[Storage] Download error for ${jobId}:`, error);
     return null;
@@ -350,22 +363,23 @@ app.get('/api/status/:jobId', (req, res) => {
 
 // 画像ダウンロードAPI
 app.get('/api/download/:jobId', async (req, res) => {
-  const imageBuffer = await downloadFromStorage(req.params.jobId);
-  if (!imageBuffer) {
+  const result = await downloadFromStorage(req.params.jobId);
+  if (!result) {
     return res.status(404).json({ error: 'Image not found' });
   }
-  res.setHeader('Content-Type', 'image/jpeg');
-  res.setHeader('Content-Disposition', `attachment; filename=capture-${req.params.jobId}.jpg`);
-  res.send(imageBuffer);
+  const contentType = result.format === 'jpg' ? 'image/jpeg' : 'image/png';
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Disposition', `attachment; filename=capture-${req.params.jobId}.${result.format}`);
+  res.send(result.buffer);
 });
 
 // 画像プレビューAPI
 app.get('/api/preview/:jobId', async (req, res) => {
-  const imageBuffer = await downloadFromStorage(req.params.jobId);
-  if (!imageBuffer) {
+  const result = await downloadFromStorage(req.params.jobId);
+  if (!result) {
     return res.status(404).json({ error: 'Image not found' });
   }
-  const thumbnail = await sharp(imageBuffer)
+  const thumbnail = await sharp(result.buffer)
     .resize(400, undefined, { fit: 'inside' })
     .png()
     .toBuffer();
