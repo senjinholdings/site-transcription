@@ -43,8 +43,23 @@ const captureStatus = new Map<string, JobStatus>();
 async function uploadToStorage(jobId: string, buffer: Buffer): Promise<Buffer> {
   const bucket = storage.bucket(BUCKET_NAME);
 
-  // PNGをJPEGに変換して圧縮（Cloud Runの32MB制限対策）
-  const compressedBuffer = await sharp(buffer)
+  // 画像のメタデータを取得
+  const metadata = await sharp(buffer).metadata();
+  const maxHeight = 16000; // JPEGの制限対策（65535が上限だが余裕を持たせる）
+
+  let sharpInstance = sharp(buffer);
+
+  // 高さが制限を超える場合はリサイズ
+  if (metadata.height && metadata.height > maxHeight) {
+    console.log(`[Storage] Resizing image from ${metadata.height}px to ${maxHeight}px height`);
+    sharpInstance = sharpInstance.resize({
+      height: maxHeight,
+      withoutEnlargement: true,
+    });
+  }
+
+  // JPEGに変換して圧縮
+  const compressedBuffer = await sharpInstance
     .jpeg({ quality: 85 })
     .toBuffer();
 
