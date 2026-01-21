@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Site Capture App</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: white;
+      text-align: center;
+      margin-bottom: 30px;
+      font-size: 2rem;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 30px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    }
+    .input-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    input[type="url"] {
+      flex: 1;
+      padding: 14px 18px;
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 16px;
+      transition: border-color 0.2s;
+    }
+    input[type="url"]:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    button {
+      padding: 14px 28px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .progress-container {
+      display: none;
+      margin-top: 20px;
+    }
+    .progress-container.active {
+      display: block;
+    }
+    .progress-bar {
+      height: 8px;
+      background: #e0e0e0;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea, #764ba2);
+      transition: width 0.3s;
+      width: 0%;
+    }
+    .status-text {
+      margin-top: 10px;
+      color: #666;
+      font-size: 14px;
+    }
+    .result {
+      display: none;
+      margin-top: 20px;
+    }
+    .result.active {
+      display: block;
+    }
+    .result-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 768px) {
+      .result-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .result-section {
+      border: 1px solid #e0e0e0;
+      border-radius: 12px;
+      padding: 15px;
+    }
+    .result-section h3 {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .result img {
+      width: 100%;
+      max-height: 400px;
+      object-fit: contain;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+    .ocr-text {
+      max-height: 400px;
+      overflow-y: auto;
+      background: #f8f9fa;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+    .download-btn {
+      display: inline-block;
+      padding: 10px 20px;
+      background: #28a745;
+      color: white;
+      text-decoration: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: bold;
+    }
+    .download-btn:hover {
+      background: #218838;
+    }
+    .copy-btn {
+      padding: 10px 20px;
+      background: #6c757d;
+      font-size: 14px;
+    }
+    .copy-btn:hover:not(:disabled) {
+      background: #5a6268;
+    }
+    .error {
+      color: #dc3545;
+      margin-top: 10px;
+      padding: 10px;
+      background: #f8d7da;
+      border-radius: 8px;
+      display: none;
+    }
+    .error.active {
+      display: block;
+    }
+    .warning {
+      color: #856404;
+      background: #fff3cd;
+      padding: 10px;
+      border-radius: 8px;
+      margin-top: 10px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Site Capture App</h1>
+    <div class="card">
+      <div class="input-group">
+        <input type="url" id="urlInput" placeholder="https://example.com" />
+        <button id="captureBtn" onclick="startCapture()">キャプチャ</button>
+      </div>
+
+      <div class="progress-container" id="progress">
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div class="status-text" id="statusText">準備中...</div>
+      </div>
+
+      <div class="error" id="error"></div>
+
+      <div class="result" id="result">
+        <div class="result-grid">
+          <div class="result-section">
+            <h3>📸 キャプチャ画像</h3>
+            <img id="preview" src="" alt="Preview" />
+            <div class="button-group">
+              <a id="downloadLink" class="download-btn" href="#" download>画像をダウンロード</a>
+            </div>
+          </div>
+          <div class="result-section">
+            <h3>📝 抽出テキスト（OCR）</h3>
+            <div class="ocr-text" id="ocrText"></div>
+            <div class="button-group">
+              <button class="copy-btn" onclick="copyOcrText()">テキストをコピー</button>
+            </div>
+            <div id="ocrWarning" class="warning" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const statusMessages = {
+      starting: '開始中...',
+      launching: 'ブラウザを起動中...',
+      loading: 'ページを読み込み中...',
+      capturing: 'キャプチャ中...',
+      compositing: '画像を合成中...',
+      ocr_starting: 'OCR処理を開始中...',
+      ocr_processing: 'テキストを抽出中...',
+      ocr_cleaning: 'テキストを整形中...',
+      completed: '完了！',
+      error: 'エラーが発生しました',
+    };
+
+    let currentJobId = null;
+
+    async function startCapture() {
+      const url = document.getElementById('urlInput').value.trim();
+      if (!url) {
+        alert('URLを入力してください');
+        return;
+      }
+
+      const btn = document.getElementById('captureBtn');
+      const progress = document.getElementById('progress');
+      const result = document.getElementById('result');
+      const error = document.getElementById('error');
+
+      btn.disabled = true;
+      progress.classList.add('active');
+      result.classList.remove('active');
+      error.classList.remove('active');
+
+      try {
+        const res = await fetch('/api/capture', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        const { jobId } = await res.json();
+        currentJobId = jobId;
+
+        const checkStatus = async () => {
+          const statusRes = await fetch(`/api/status/${jobId}`);
+          const status = await statusRes.json();
+
+          document.getElementById('progressFill').style.width = status.progress + '%';
+
+          let statusText = statusMessages[status.status] || status.status;
+          if (status.ocrChunks) {
+            statusText += ` (${status.ocrChunks.current}/${status.ocrChunks.total})`;
+          }
+          document.getElementById('statusText').textContent = statusText;
+
+          if (status.status === 'completed') {
+            document.getElementById('preview').src = `/api/preview/${jobId}`;
+            document.getElementById('downloadLink').href = `/api/download/${jobId}`;
+            document.getElementById('ocrText').textContent = status.ocrText || '（テキストなし）';
+
+            if (status.error) {
+              document.getElementById('ocrWarning').textContent = status.error;
+              document.getElementById('ocrWarning').style.display = 'block';
+            } else {
+              document.getElementById('ocrWarning').style.display = 'none';
+            }
+
+            result.classList.add('active');
+            progress.classList.remove('active');
+            btn.disabled = false;
+          } else if (status.status === 'error') {
+            error.textContent = status.error || 'エラーが発生しました';
+            error.classList.add('active');
+            progress.classList.remove('active');
+            btn.disabled = false;
+          } else {
+            setTimeout(checkStatus, 500);
+          }
+        };
+
+        checkStatus();
+      } catch (e) {
+        error.textContent = 'リクエストに失敗しました';
+        error.classList.add('active');
+        progress.classList.remove('active');
+        btn.disabled = false;
+      }
+    }
+
+    function copyOcrText() {
+      const text = document.getElementById('ocrText').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        alert('テキストをクリップボードにコピーしました');
+      }).catch(() => {
+        alert('コピーに失敗しました');
+      });
+    }
+
+    document.getElementById('urlInput').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') startCapture();
+    });
+  </script>
+</body>
+</html>
