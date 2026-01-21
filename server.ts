@@ -22,10 +22,13 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// デバイス設定
+// デバイス設定（デスクトップ幅でキャプチャ）
 const DEVICE_PRESET = {
-  ...devices['iPhone 13 Pro'],
-  deviceScaleFactor: 3,
+  viewport: { width: 1280, height: 800 },
+  deviceScaleFactor: 2,
+  userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  isMobile: false,
+  hasTouch: false,
 };
 
 // ジョブステータス
