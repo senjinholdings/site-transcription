@@ -183,13 +183,27 @@ app.post('/api/capture', async (req, res) => {
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
       });
 
-      const context = await browser.newContext(DEVICE_PRESET);
+      const context = await browser.newContext({
+        ...DEVICE_PRESET,
+        // 広告からのアクセスをシミュレート
+        extraHTTPHeaders: {
+          'Referer': 'https://www.google.com/',
+        },
+      });
       const page = await context.newPage();
 
       captureStatus.set(jobId, { status: 'loading', progress: 10 });
 
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-      await page.waitForTimeout(3000);
+      // ページ読み込み（networkidleで完全読み込みを待つ）
+      await page.goto(url, { waitUntil: 'networkidle', timeout: 120000 });
+
+      // リダイレクト先URLをログ
+      const finalUrl = page.url();
+      console.log(`[Capture] Requested: ${url}`);
+      console.log(`[Capture] Final URL: ${finalUrl}`);
+
+      // JavaScript実行完了を待つ
+      await page.waitForTimeout(5000);
 
       // 遅延読み込みコンテンツ
       await page.evaluate(() => {
