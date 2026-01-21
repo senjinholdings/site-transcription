@@ -3,6 +3,7 @@ import express from 'express';
 import { chromium, devices } from 'playwright-extra';
 import type { Page } from 'playwright';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import { Storage } from '@google-cloud/storage';
 import sharp from 'sharp';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -10,6 +11,10 @@ import { performOcr } from './gemini-helper.js';
 
 // Stealthプラグインを追加（ボット検出回避）
 chromium.use(StealthPlugin());
+
+// Cloud Storage設定
+const storage = new Storage();
+const BUCKET_NAME = 'site-transcription-captures';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -33,7 +38,29 @@ interface JobStatus {
 }
 
 const captureStatus = new Map<string, JobStatus>();
-const captureResults = new Map<string, Buffer>();
+
+// Cloud Storageに画像をアップロード
+async function uploadToStorage(jobId: string, buffer: Buffer): Promise<void> {
+  const bucket = storage.bucket(BUCKET_NAME);
+  const file = bucket.file(`${jobId}.png`);
+  await file.save(buffer, { contentType: 'image/png' });
+  console.log(`[Storage] Uploaded ${jobId}.png`);
+}
+
+// Cloud Storageから画像をダウンロード
+async function downloadFromStorage(jobId: string): Promise<Buffer | null> {
+  try {
+    const bucket = storage.bucket(BUCKET_NAME);
+    const file = bucket.file(`${jobId}.png`);
+    const [exists] = await file.exists();
+    if (!exists) return null;
+    const [buffer] = await file.download();
+    return buffer;
+  } catch (error) {
+    console.error(`[Storage] Download error for ${jobId}:`, error);
+    return null;
+  }
+}
 
 /**
  * 手動セグメントキャプチャ
@@ -232,7 +259,9 @@ app.post('/api/capture', async (req, res) => {
 
       // キャプチャ
       const imageBuffer = await captureFullPageManually(page, DEVICE_PRESET.deviceScaleFactor, jobId);
-      captureResults.set(jobId, imageBuffer);
+
+      // Cloud Storageに保存
+      await uploadToStorage(jobId, imageBuffer);
 
       await context.close();
       await browser.close();
@@ -287,11 +316,10 @@ app.post('/api/capture', async (req, res) => {
         });
       }
 
-      // 10分後に結果を削除
+      // 1時間後にステータスを削除（画像はCloud Storageのライフサイクルで管理）
       setTimeout(() => {
-        captureResults.delete(jobId);
         captureStatus.delete(jobId);
-      }, 10 * 60 * 1000);
+      }, 60 * 60 * 1000);
 
     } catch (error: any) {
       captureStatus.set(jobId, { status: 'error', progress: 0, error: error.message });
@@ -310,8 +338,8 @@ app.get('/api/status/:jobId', (req, res) => {
 });
 
 // 画像ダウンロードAPI
-app.get('/api/download/:jobId', (req, res) => {
-  const imageBuffer = captureResults.get(req.params.jobId);
+app.get('/api/download/:jobId', async (req, res) => {
+  const imageBuffer = await downloadFromStorage(req.params.jobId);
   if (!imageBuffer) {
     return res.status(404).json({ error: 'Image not found' });
   }
@@ -322,7 +350,7 @@ app.get('/api/download/:jobId', (req, res) => {
 
 // 画像プレビューAPI
 app.get('/api/preview/:jobId', async (req, res) => {
-  const imageBuffer = captureResults.get(req.params.jobId);
+  const imageBuffer = await downloadFromStorage(req.params.jobId);
   if (!imageBuffer) {
     return res.status(404).json({ error: 'Image not found' });
   }
