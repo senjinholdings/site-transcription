@@ -18,8 +18,8 @@ importers:
         specifier: ^4.18.0
         version: 4.22.1
       playwright:
-        specifier: ^1.40.0
-        version: 1.57.0
+        specifier: 1.52.0
+        version: 1.52.0
       sharp:
         specifier: ^0.34.0
         version: 0.34.5
@@ -546,13 +546,13 @@ packages:
   path-to-regexp@0.1.12:
     resolution: {integrity: sha512-RA1GjUVMnvYFxuqovrEqZoxxW5NUZqbwKtYz/Tt7nXerk0LbLblQmrsgdeOxV5SFHf0UDggjS/bSeOZwt1pmEQ==}
 
-  playwright-core@1.57.0:
-    resolution: {integrity: sha512-agTcKlMw/mjBWOnD6kFZttAAGHgi/Nw0CZ2o6JqWSbMlI219lAFLZZCyqByTsvVAJq5XA5H8cA6PrvBRpBWEuQ==}
+  playwright-core@1.52.0:
+    resolution: {integrity: sha512-l2osTgLXSMeuLZOML9qYODUQoPPnUsKsb5/P6LJ2e6uPKXUdPK5WYhN4z03G+YNbWmGDY4YENauNu4ZKczreHg==}
     engines: {node: '>=18'}
     hasBin: true
 
-  playwright@1.57.0:
-    resolution: {integrity: sha512-ilYQj1s8sr2ppEJ2YVadYBN0Mb3mdo9J0wQ+UuDhzYqURwSoW4n1Xs5vs7ORwgDGmyEh33tRMeS8KhdkMoLXQw==}
+  playwright@1.52.0:
+    resolution: {integrity: sha512-JAwMNMBlxJ2oD1kce4KPtMkDeKGHQstdpFPcPH3maElAXon/QZeTvtsfXmTMRyO9TslfoYOXkSsvao2nE1ilTw==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -1079,11 +1079,11 @@ snapshots:
 
   path-to-regexp@0.1.12: {}
 
-  playwright-core@1.57.0: {}
+  playwright-core@1.52.0: {}
 
-  playwright@1.57.0:
+  playwright@1.52.0:
     dependencies:
-      playwright-core: 1.57.0
+      playwright-core: 1.52.0
     optionalDependencies:
       fsevents: 2.3.2
 
