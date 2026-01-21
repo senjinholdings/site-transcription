@@ -188,14 +188,27 @@ app.post('/api/capture', async (req, res) => {
         // 広告からのアクセスをシミュレート
         extraHTTPHeaders: {
           'Referer': 'https://www.google.com/',
+          'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7',
         },
+        // JavaScriptでのボット検出を回避
+        javaScriptEnabled: true,
+        bypassCSP: true,
       });
       const page = await context.newPage();
 
+      // WebDriverフラグを隠す
+      await page.addInitScript(() => {
+        Object.defineProperty(navigator, 'webdriver', { get: () => false });
+        // @ts-ignore
+        window.chrome = { runtime: {} };
+        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+        Object.defineProperty(navigator, 'languages', { get: () => ['ja-JP', 'ja', 'en-US', 'en'] });
+      });
+
       captureStatus.set(jobId, { status: 'loading', progress: 10 });
 
-      // ページ読み込み（networkidleで完全読み込みを待つ）
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 120000 });
+      // ページ読み込み
+      await page.goto(url, { waitUntil: 'load', timeout: 120000 });
 
       // リダイレクト先URLをログ
       const finalUrl = page.url();
