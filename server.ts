@@ -278,8 +278,8 @@ app.post('/api/capture', async (req, res) => {
       });
       const page = await context.newPage();
 
-      // 音声のみブロック（動画は最初のフレーム取得のため許可）
-      await page.route('**/*.{mp3,wav,m4a,ogg,flac}', route => route.abort());
+      // 音声のみブロック（動画はフレーム取得のため許可）
+      await page.route('**/*.{mp3,wav,m4a,flac,aac}', route => route.abort());
 
       captureStatus.set(jobId, { status: 'loading', progress: 10 });
 
@@ -300,52 +300,6 @@ app.post('/api/capture', async (req, res) => {
 
       // JavaScript実行完了を待つ
       await page.waitForTimeout(3000);
-
-      // 遅延読み込みコンテンツ
-      await page.evaluate(() => {
-        document.querySelectorAll('img[data-src], img[data-lazy-src]').forEach((img) => {
-          const dataSrc = img.getAttribute('data-src') || img.getAttribute('data-lazy-src');
-          if (dataSrc) img.setAttribute('src', dataSrc);
-        });
-      });
-
-      // 動画の最初のフレームを表示（タイムアウト付き）
-      await page.evaluate(async () => {
-        const videos = document.querySelectorAll('video');
-        const timeout = 5000; // 5秒でタイムアウト
-
-        await Promise.all(Array.from(videos).map(async (video) => {
-          try {
-            video.muted = true;
-            video.preload = 'metadata';
-
-            // srcがdata-srcに入っている場合（遅延読み込み対応）
-            const dataSrc = video.getAttribute('data-src');
-            if (dataSrc && !video.src) {
-              video.src = dataSrc;
-            }
-
-            // 最初のフレームが読み込まれるまで待機
-            await Promise.race([
-              new Promise<void>((resolve) => {
-                if (video.readyState >= 1) { // HAVE_METADATA
-                  resolve();
-                } else {
-                  video.addEventListener('loadedmetadata', () => resolve(), { once: true });
-                }
-              }),
-              new Promise<void>((resolve) => setTimeout(resolve, timeout))
-            ]);
-
-            // 最初のフレームに移動
-            video.currentTime = 0.1;
-            video.pause();
-          } catch (e) {
-            // エラーは無視
-          }
-        }));
-      });
-      await page.waitForTimeout(500);
 
       // スクロール（到達ベース：最下部到達 or scrollHeight増加停止で終了）
       const MAX_SCROLL_ITERATIONS = 100; // 安全弁
@@ -381,6 +335,90 @@ app.post('/api/capture', async (req, res) => {
 
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.waitForTimeout(1000);
+
+      // 遅延読み込みコンテンツ（スクロール後に処理）
+      await page.evaluate(() => {
+        document.querySelectorAll('img[data-src], img[data-lazy-src]').forEach((img) => {
+          const dataSrc = img.getAttribute('data-src') || img.getAttribute('data-lazy-src');
+          if (dataSrc) img.setAttribute('src', dataSrc);
+        });
+      });
+
+      // 動画の最初のフレームをCanvasでキャプチャして画像に置換
+      console.log('[Capture] Processing video frames...');
+      const videoCount = await page.evaluate(async () => {
+        const videos = document.querySelectorAll('video');
+        const TIMEOUT = 5000; // 各動画5秒まで待機
+        let processedCount = 0;
+
+        for (const video of Array.from(videos)) {
+          try {
+            // source要素のdata-srcをsrcにコピー（SquadBeyond対応）
+            const source = video.querySelector('source[data-src]');
+            if (source && !source.getAttribute('src')) {
+              const dataSrc = source.getAttribute('data-src');
+              if (dataSrc) {
+                source.setAttribute('src', dataSrc);
+              }
+            }
+
+            // video自体のdata-srcもチェック
+            const videoDataSrc = video.getAttribute('data-src');
+            if (videoDataSrc && !video.src) {
+              video.src = videoDataSrc;
+            }
+
+            video.muted = true;
+            video.preload = 'auto';
+            video.load();
+
+            // 最初のフレームが読み込まれるまで待機
+            const loaded = await Promise.race([
+              new Promise<boolean>((resolve) => {
+                if (video.readyState >= 2) {
+                  resolve(true);
+                } else {
+                  video.addEventListener('loadeddata', () => resolve(true), { once: true });
+                  video.addEventListener('error', () => resolve(false), { once: true });
+                }
+              }),
+              new Promise<boolean>((resolve) => setTimeout(() => resolve(false), TIMEOUT))
+            ]);
+
+            if (!loaded || video.videoWidth === 0) {
+              video.style.backgroundColor = '#333';
+              continue;
+            }
+
+            // Canvasで最初のフレームをキャプチャ
+            video.currentTime = 0.1;
+            await new Promise(r => setTimeout(r, 100));
+
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+              const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+
+              const img = document.createElement('img');
+              img.src = dataUrl;
+              img.style.width = video.style.width || (video.width + 'px') || '100%';
+              img.style.height = video.style.height || (video.height + 'px') || 'auto';
+              img.style.maxWidth = '100%';
+              img.style.display = 'block';
+
+              video.parentElement?.replaceChild(img, video);
+              processedCount++;
+            }
+          } catch (e) {
+            video.style.backgroundColor = '#333';
+          }
+        }
+        return processedCount;
+      });
+      console.log(`[Capture] Processed ${videoCount} video frames`);
 
       // 固定要素フリーズ
       await page.evaluate(FREEZE_SCRIPT);
