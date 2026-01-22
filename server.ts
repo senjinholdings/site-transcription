@@ -104,14 +104,22 @@ async function downloadFromStorage(jobId: string): Promise<{ buffer: Buffer; for
   }
 }
 
+interface CaptureResult {
+  composedBuffer: Buffer;       // 合成済み画像（ストレージ用）
+  segments: Buffer[];           // セグメントPNG配列（OCR用）
+  segmentHeight: number;        // 各セグメントの高さ（deviceScaleFactor適用後）
+}
+
 /**
  * 手動セグメントキャプチャ
+ * - composedBuffer: ストレージ保存用の合成画像
+ * - segments: OCR用の元セグメント（JPEG変換なし、劣化なし）
  */
 async function captureFullPageManually(
   page: Page,
   deviceScaleFactor: number,
   jobId: string
-): Promise<Buffer> {
+): Promise<CaptureResult> {
   const dims = await page.evaluate(() => ({
     docHeight: document.documentElement.scrollHeight,
     viewportHeight: window.innerHeight,
@@ -175,7 +183,7 @@ async function captureFullPageManually(
 
   captureStatus.set(jobId, { status: 'compositing', progress: 50 });
 
-  const result = await sharp({
+  const composedBuffer = await sharp({
     create: {
       width: imageWidth,
       height: Math.round(totalImageHeight),
@@ -187,7 +195,11 @@ async function captureFullPageManually(
     .png()
     .toBuffer();
 
-  return result;
+  return {
+    composedBuffer,
+    segments,
+    segmentHeight: segmentImageHeight,
+  };
 }
 
 const FREEZE_SCRIPT = `
@@ -266,18 +278,35 @@ app.post('/api/capture', async (req, res) => {
       });
       const page = await context.newPage();
 
+      // 動画・音声リソースをブロック（高速化）
+      await page.route('**/*.{mp4,webm,ogg,mp3,wav,m4a}', route => route.abort());
+      await page.route('**/*', (route, request) => {
+        const resourceType = request.resourceType();
+        if (resourceType === 'media') {
+          return route.abort();
+        }
+        return route.continue();
+      });
+
       captureStatus.set(jobId, { status: 'loading', progress: 10 });
 
-      // ページ読み込み
-      await page.goto(url, { waitUntil: 'load', timeout: 120000 });
+      // ページ読み込み（domcontentloadedで待機 → 動画等の重いリソースを待たない）
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
       // リダイレクト先URLをログ
       const finalUrl = page.url();
       console.log(`[Capture] Requested: ${url}`);
       console.log(`[Capture] Final URL: ${finalUrl}`);
 
+      // ネットワークが落ち着くまで待機（最大10秒、動画は除外）
+      try {
+        await page.waitForLoadState('networkidle', { timeout: 10000 });
+      } catch {
+        console.log('[Capture] Network idle timeout - continuing anyway');
+      }
+
       // JavaScript実行完了を待つ
-      await page.waitForTimeout(5000);
+      await page.waitForTimeout(3000);
 
       // 遅延読み込みコンテンツ
       await page.evaluate(() => {
@@ -287,8 +316,46 @@ app.post('/api/capture', async (req, res) => {
         });
       });
 
-      // スクロール
-      for (let i = 0; i < 30; i++) {
+      // 動画要素にposter画像がある場合は表示（動画自体はブロック済み）
+      await page.evaluate(() => {
+        document.querySelectorAll('video').forEach((video) => {
+          // poster属性があれば背景として表示
+          if (video.poster) {
+            video.style.backgroundImage = `url(${video.poster})`;
+            video.style.backgroundSize = 'cover';
+            video.style.backgroundPosition = 'center';
+          }
+        });
+      });
+
+      // スクロール（到達ベース：最下部到達 or scrollHeight増加停止で終了）
+      const MAX_SCROLL_ITERATIONS = 100; // 安全弁
+      const SCROLL_STABLE_COUNT = 3;     // scrollHeightが変わらない回数の閾値
+      let stableCount = 0;
+      let lastScrollHeight = 0;
+
+      for (let i = 0; i < MAX_SCROLL_ITERATIONS; i++) {
+        const { scrollHeight, scrollTop, clientHeight } = await page.evaluate(() => ({
+          scrollHeight: document.documentElement.scrollHeight,
+          scrollTop: window.scrollY,
+          clientHeight: window.innerHeight,
+        }));
+
+        // 最下部に到達したか確認
+        if (scrollTop + clientHeight >= scrollHeight - 10) {
+          // scrollHeightが増えなくなったら終了
+          if (scrollHeight === lastScrollHeight) {
+            stableCount++;
+            if (stableCount >= SCROLL_STABLE_COUNT) {
+              console.log(`[Scroll] Reached bottom after ${i + 1} scrolls (height: ${scrollHeight}px)`);
+              break;
+            }
+          } else {
+            stableCount = 0;
+          }
+        }
+
+        lastScrollHeight = scrollHeight;
         await page.evaluate(() => window.scrollBy(0, window.innerHeight));
         await page.waitForTimeout(200);
       }
@@ -300,21 +367,21 @@ app.post('/api/capture', async (req, res) => {
       await page.evaluate(FREEZE_SCRIPT);
 
       // キャプチャ
-      const imageBuffer = await captureFullPageManually(page, DEVICE_PRESET.deviceScaleFactor, jobId);
+      const captureResult = await captureFullPageManually(page, DEVICE_PRESET.deviceScaleFactor, jobId);
 
-      // Cloud Storageに保存
-      await uploadToStorage(jobId, imageBuffer);
+      // Cloud Storageに保存（合成画像をJPEG化）
+      await uploadToStorage(jobId, captureResult.composedBuffer);
 
       await context.close();
       await browser.close();
       browser = undefined;
 
-      // OCR処理
+      // OCR処理（セグメントPNGを直接使用 → JPEG変換による劣化なし）
       captureStatus.set(jobId, { status: 'ocr_starting', progress: 55 });
 
       if (process.env.GEMINI_API_KEY) {
         try {
-          const ocrResult = await performOcr(imageBuffer, {
+          const ocrResult = await performOcr(captureResult.segments, {
             onProgress: (current, total) => {
               // OCR抽出: 55-85%
               const ocrProgress = Math.round((current / total) * 30) + 55;

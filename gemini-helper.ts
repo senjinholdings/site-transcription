@@ -40,6 +40,30 @@ async function splitImage(imageBuffer: Buffer, maxHeight: number = 4000): Promis
   return chunks;
 }
 
+// 並列数を制限して実行（p-limit相当）
+async function runWithConcurrencyLimit<T>(
+  tasks: (() => Promise<T>)[],
+  limit: number
+): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let currentIndex = 0;
+
+  async function runNext(): Promise<void> {
+    while (currentIndex < tasks.length) {
+      const index = currentIndex++;
+      results[index] = await tasks[index]();
+    }
+  }
+
+  // limit個のワーカーを並列で起動
+  const workers = Array(Math.min(limit, tasks.length))
+    .fill(null)
+    .map(() => runNext());
+
+  await Promise.all(workers);
+  return results;
+}
+
 // リトライ付きでAPIを呼び出す
 async function withRetry<T>(
   fn: () => Promise<T>,
@@ -171,27 +195,36 @@ async function postProcessOcr(
     model: process.env.GEMINI_OCR_MODEL ?? "gemini-2.0-flash"
   });
 
-  const cleanupPrompt = `以下のOCR抽出テキストを整形してください。
+  const cleanupPrompt = `以下のOCR抽出テキストの改行を整理してください。
 
 ## 重要な制約:
 - **テキストの順序は絶対に変更しない**（上から下の順序を厳守）
-- **内容の削除・省略・まとめは禁止**
+- **内容の削除・省略・要約は絶対禁止**
 - **構造化・再編成は禁止**
 
-## 許可される処理:
-1. **誤字修正**: OCRの明らかな誤認識のみ修正（例：「休舌」→「体重」）
-2. **断片結合**: 不自然に分割された数値や単語を結合（例：「1,」「000円」→「1,000円」）
-3. **改行整理**: 不自然な改行を適切に調整
+## 必須の処理:
+1. **文章の結合**: 意味的に繋がっている文章を1行にまとめる
+   - 例: 「肥満気味\\nな方へ」→「肥満気味な方へ」
+   - 例: 「体脂肪\\n体重の減少を\\n本気で\\nサポート!」→「体脂肪 体重の減少を本気でサポート!」
+   - 例: 「1,000円\\nOFF」→「1,000円OFF」
+
+2. **段落の区切り**: 異なるセクション・話題の間は空行で区切る
+   - 見出しと本文の間
+   - 異なる商品情報の間
+   - 注釈と本文の間
+
+3. **誤字修正**: OCRの明らかな誤認識のみ修正
 
 ## 出力形式:
-- プレーンテキストで出力（マークダウン装飾は不要）
-- 元のテキストの出現順序をそのまま維持
-- ボタンやラベルのテキストも削除せずそのまま残す
+- プレーンテキストで出力
+- 1つの文章・フレーズは1行にまとめる
+- セクション間は空行で区切る
+- 全てのテキストを漏れなく出力（削除禁止）
 
 ## 入力テキスト:
 ${rawText}
 
-## 整形後のテキスト（順序維持）:`;
+## 整形後のテキスト:`;
 
   try {
     const result = await withRetry(async () => {
@@ -217,8 +250,13 @@ ${rawText}
   }
 }
 
+/**
+ * OCR処理
+ * @param input - セグメントPNG配列（推奨）または単一画像Buffer
+ *               セグメント配列を渡すとJPEG変換劣化なしで高精度
+ */
 export async function performOcr(
-  imageBuffer: Buffer,
+  input: Buffer[] | Buffer,
   options: {
     onProgress?: (chunk: number, total: number) => void;
     onStatusChange?: (status: 'extracting' | 'cleaning') => void;
@@ -229,29 +267,40 @@ export async function performOcr(
     throw new Error("GEMINI_API_KEY が設定されていません。.env ファイルを確認してください。");
   }
 
+  // 入力がセグメント配列か単一Bufferかを判定
+  const isSegmentArray = Array.isArray(input);
+  const totalSize = isSegmentArray
+    ? input.reduce((sum, buf) => sum + buf.length, 0)
+    : input.length;
+
   console.log('[Gemini Vision OCR] Starting OCR process...');
-  console.log('[Gemini Vision OCR] Image size:', imageBuffer.length, 'bytes');
+  console.log(`[Gemini Vision OCR] Input: ${isSegmentArray ? `${input.length} segments` : 'single image'}, total ${totalSize} bytes`);
 
   const ai = new GoogleGenerativeAI(apiKey);
   const startTime = Date.now();
 
   try {
-    const chunks = await splitImage(imageBuffer, 4000);
+    // セグメント配列ならそのまま使用、単一Bufferなら分割
+    const chunks = isSegmentArray ? input : await splitImage(input, 4000);
     const totalChunks = chunks.length;
 
     let allTexts: string[];
+
+    const OCR_CONCURRENCY_LIMIT = 3; // 並列数を制限（429/503エラー軽減）
 
     if (totalChunks === 1) {
       const text = await ocrSingleImage(ai, chunks[0], 0, 1, options.onProgress);
       allTexts = [text];
     } else {
-      console.log(`[Gemini Vision OCR] Processing ${totalChunks} chunks in parallel...`);
+      console.log(`[Gemini Vision OCR] Processing ${totalChunks} chunks with concurrency limit ${OCR_CONCURRENCY_LIMIT}...`);
 
-      const promises = chunks.map((chunk, index) =>
-        ocrSingleImage(ai, chunk, index, totalChunks, options.onProgress)
+      // タスクを関数配列として準備（遅延実行）
+      const tasks = chunks.map((chunk, index) =>
+        () => ocrSingleImage(ai, chunk, index, totalChunks, options.onProgress)
       );
 
-      allTexts = await Promise.all(promises);
+      // 並列数を制限して実行
+      allTexts = await runWithConcurrencyLimit(tasks, OCR_CONCURRENCY_LIMIT);
     }
 
     const combinedText = allTexts.join('\n\n');

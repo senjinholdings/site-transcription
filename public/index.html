@@ -210,20 +210,24 @@
     /* Results */
     .results {
       width: 100%;
-      max-width: 800px;
+      max-width: 1400px;
       display: none;
     }
 
     .results.active {
-      display: block;
+      display: flex;
+      gap: 24px;
     }
 
     .result-card {
       background: #fff;
       border-radius: var(--radius-lg);
       box-shadow: var(--shadow);
-      margin-bottom: 20px;
       overflow: hidden;
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
     }
 
     .result-header {
@@ -259,24 +263,35 @@
       background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
     }
 
+
     .result-body {
       padding: 24px;
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
 
     /* Image Preview */
+    .image-preview-container {
+      flex: 1;
+      overflow-y: auto;
+      background: var(--bg-secondary);
+      border-radius: var(--radius);
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+    }
+
     .image-preview {
       max-width: 100%;
-      max-height: 320px;
       object-fit: contain;
-      border-radius: var(--radius);
       display: block;
-      margin: 0 auto;
-      background: var(--bg-secondary);
     }
 
     /* OCR Text */
     .ocr-text {
-      max-height: 400px;
+      flex: 1;
       overflow-y: auto;
       background: var(--bg-secondary);
       padding: 20px;
@@ -369,7 +384,30 @@
       text-decoration: underline;
     }
 
+    /* Two column height sync */
+    .results.active {
+      min-height: 500px;
+      max-height: calc(100vh - 280px);
+    }
+
+    .result-card .result-body {
+      min-height: 400px;
+      max-height: calc(100vh - 400px);
+    }
+
     /* Responsive */
+    @media (max-width: 1024px) {
+      .results.active {
+        flex-direction: column;
+        max-height: none;
+      }
+
+      .result-card .result-body {
+        min-height: 300px;
+        max-height: 400px;
+      }
+    }
+
     @media (max-width: 768px) {
       .hero-title {
         font-size: 40px;
@@ -471,7 +509,9 @@
           </div>
         </div>
         <div class="result-body">
-          <img id="preview" class="image-preview" src="" alt="Preview" />
+          <div class="image-preview-container">
+            <img id="preview" class="image-preview" src="" alt="Preview" />
+          </div>
         </div>
         <div class="action-bar">
           <button class="action-btn" onclick="downloadImage()">
