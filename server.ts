@@ -278,15 +278,8 @@ app.post('/api/capture', async (req, res) => {
       });
       const page = await context.newPage();
 
-      // 動画・音声リソースをブロック（高速化）
-      await page.route('**/*.{mp4,webm,ogg,mp3,wav,m4a}', route => route.abort());
-      await page.route('**/*', (route, request) => {
-        const resourceType = request.resourceType();
-        if (resourceType === 'media') {
-          return route.abort();
-        }
-        return route.continue();
-      });
+      // 音声のみブロック（動画は最初のフレーム取得のため許可）
+      await page.route('**/*.{mp3,wav,m4a,ogg,flac}', route => route.abort());
 
       captureStatus.set(jobId, { status: 'loading', progress: 10 });
 
@@ -316,17 +309,43 @@ app.post('/api/capture', async (req, res) => {
         });
       });
 
-      // 動画要素にposter画像がある場合は表示（動画自体はブロック済み）
-      await page.evaluate(() => {
-        document.querySelectorAll('video').forEach((video) => {
-          // poster属性があれば背景として表示
-          if (video.poster) {
-            video.style.backgroundImage = `url(${video.poster})`;
-            video.style.backgroundSize = 'cover';
-            video.style.backgroundPosition = 'center';
+      // 動画の最初のフレームを表示（タイムアウト付き）
+      await page.evaluate(async () => {
+        const videos = document.querySelectorAll('video');
+        const timeout = 5000; // 5秒でタイムアウト
+
+        await Promise.all(Array.from(videos).map(async (video) => {
+          try {
+            video.muted = true;
+            video.preload = 'metadata';
+
+            // srcがdata-srcに入っている場合（遅延読み込み対応）
+            const dataSrc = video.getAttribute('data-src');
+            if (dataSrc && !video.src) {
+              video.src = dataSrc;
+            }
+
+            // 最初のフレームが読み込まれるまで待機
+            await Promise.race([
+              new Promise<void>((resolve) => {
+                if (video.readyState >= 1) { // HAVE_METADATA
+                  resolve();
+                } else {
+                  video.addEventListener('loadedmetadata', () => resolve(), { once: true });
+                }
+              }),
+              new Promise<void>((resolve) => setTimeout(resolve, timeout))
+            ]);
+
+            // 最初のフレームに移動
+            video.currentTime = 0.1;
+            video.pause();
+          } catch (e) {
+            // エラーは無視
           }
-        });
+        }));
       });
+      await page.waitForTimeout(500);
 
       // スクロール（到達ベース：最下部到達 or scrollHeight増加停止で終了）
       const MAX_SCROLL_ITERATIONS = 100; // 安全弁
